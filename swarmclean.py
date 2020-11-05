@@ -97,11 +97,11 @@ with requests.Session() as s :
       else:
         logging.debug("will be deleted: {0}".format(file['name']))
         filesToDelete.append(file['name'])
-      # get next part of the filelist
-      marker=file['name']
-      swarmUrl='http://{0}/{1}?domain={2}&fields=name&format=json&marker={3}'.format(args.swarm,args.bucket,args.domain,marker)
-      resp=s.get(swarmUrl, auth=(args.user,args.password), allow_redirects=True)
-      files=resp.json()
+    # get next part of the filelist
+    marker=file['name']
+    swarmUrl='http://{0}/{1}?domain={2}&fields=name&format=json&marker={3}'.format(args.swarm,args.bucket,args.domain,marker)
+    resp=s.get(swarmUrl, auth=(args.user,args.password), allow_redirects=True)
+    files=resp.json()
   if not args.loglevel.upper()=='DEBUG':
     print('\n', end='', flush=True)
 
