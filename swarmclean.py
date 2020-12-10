@@ -123,27 +123,28 @@ with requests.Session() as s :
         if resp.status_code==200:
           # set deletable=yes lifepoint
           logging.debug(resp.headers)
-          lifepoints=scspHeaders.lifepointsFromString(resp.headers['Lifepoint'])
-          for lp in lifepoints:
-            if lp.end == None or time.time() <= lp.end.sinceEpoch():
-              if lp.constraint == 'deletable=no':
-                logging.debug('set deletable=yes')
-                headers={}
-                # copy existing headers
-                for header in resp.headers :
-                  if not headersSkip.match(header) and headersAllow.match(header):
-                    headers[header]=resp.headers[header]
-                # add lifepoint header
-                headers['Lifepoint']=lifepoint
-                logging.debug(swarmUrl)
-                resp2=s.request('COPY',swarmUrl,headers=headers, auth=(args.user,args.password))
-                if resp2.status_code != 200:
-                  logging.debug('HTTP '+str(resp2.status_code))
-                  logging.debug(resp2.text)
-                  logging.debug(resp2.headers)
-              break
+          if 'Lifepoint' in resp.headers:
+            lifepoints=scspHeaders.lifepointsFromString(resp.headers['Lifepoint'])
+            for lp in lifepoints:
+              if lp.end == None or time.time() <= lp.end.sinceEpoch():
+                if lp.constraint == 'deletable=no':
+                  logging.debug('set deletable=yes')
+                  headers={}
+                  # copy existing headers
+                  for header in resp.headers :
+                    if not headersSkip.match(header) and headersAllow.match(header):
+                      headers[header]=resp.headers[header]
+                  # add lifepoint header
+                  headers['Lifepoint']=lifepoint
+                  logging.debug(swarmUrl)
+                  resp2=s.request('COPY',swarmUrl,headers=headers, auth=(args.user,args.password))
+                  if resp2.status_code != 200:
+                    logging.debug('HTTP '+str(resp2.status_code))
+                    logging.debug(resp2.text)
+                    logging.debug(resp2.headers)
+                break
           # delete object
-          resp3=s.request('DELETE',swarmUrl,headers=headers, auth=(args.user,args.password))
+          resp3=s.request('DELETE',swarmUrl, auth=(args.user,args.password))
           if resp3.status_code != 200:
             logging.error('HTTP '+str(resp3.status_code))
             logging.error(resp3.text)
