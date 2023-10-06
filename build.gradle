@@ -1,9 +1,16 @@
 plugins {
     id "eu.xenit.docker" version "5.3.2"
+    id 'be.vbgn.ci-detect' version '0.5.0'
+}
+
+ext {
+    base_img = 'open-source.docker.xenit.eu/oracle-python'
+    base_img_version = 'main-2.1.1'
+    img_version = '2.0.0'
 }
 
 createDockerFile {
-    from "open-source.docker.xenit.eu/oracle-python:main-2.1.1"
+    from "${base_img}:${base_img_version}"
     smartCopy "$project.projectDir/src/main/docker/docker_root", '/'
     runCommand "yum install -y python3.11-psycopg2"
     runCommand "pip3.11 install --no-cache-dir -r /requirements.txt"
@@ -12,5 +19,19 @@ createDockerFile {
 
 dockerBuild {
     repositories = ['private.docker.xenit.eu/alfred-ops/swarmclean']
-    tags = autotag.legacyTags(['2.0.0'])
+    tags = generateDockerImageTags()
+}
+
+def generateDockerImageTags() {
+    String timestamp = new Date().format('yyyyMMddHHmmss')
+
+    String branch = ci.reference ?: 'local'
+
+    if (branch == 'local')
+        // Only used in local docker-compose.yml
+        return ["local-${img_version}", "local-${img_version}-" + timestamp]
+    if (branch == 'master')
+        return ["${img_version}-" + timestamp]
+    // Replace all non-alphanumeric characters by '_' to sanitize for image tag
+    return [branch.replaceAll('\\W', '_') + "-${img_version}-" + timestamp]
 }
