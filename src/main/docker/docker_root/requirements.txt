@@ -1,0 +1,4 @@
+configargparse
+requests[socks]
+records
+humanfriendly

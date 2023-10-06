@@ -1,0 +1,16 @@
+plugins {
+    id "eu.xenit.docker" version "5.3.2"
+}
+
+createDockerFile {
+    from "open-source.docker.xenit.eu/oracle-python:main-2.1.1"
+    smartCopy "$project.projectDir/src/main/docker/docker_root", '/'
+    runCommand "yum install -y python3.11-psycopg2"
+    runCommand "pip3.11 install --no-cache-dir -r /requirements.txt"
+    entryPoint '/swarmclean.py'
+}
+
+dockerBuild {
+    repositories = ['private.docker.xenit.eu/alfred-ops/swarmclean']
+    tags = autotag.legacyTags(['2.0.0'])
+}

@@ -1,1 +1,11 @@
+*.iml
+.idea
+.gradle
+build
+.project
+.classpath
+.settings/
+bin/
+out/
+*.iml
 **/__pycache__
