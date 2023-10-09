@@ -187,8 +187,8 @@ When the objects have a 'deletable=no' lifepoint this will be replaced with 'del
   )
   parser.add_argument(
     '-f',
-    '--filter',
-    env_var = 'SCL_FILTER',
+    '--filter_regex',
+    env_var = 'SCL_FILTER_REGEX',
     help = 'filter regex, objects that match will be deleted'
   )
 
@@ -304,7 +304,7 @@ class AlfrescoDB:
   #end def do_query
 
   def query_single_value(self, query: str, arg_values={}):
-    return self.do_query(query, **arg_values)[0][0]
+    return self.do_query(query, arg_values)[0][0]
 #end class AlfrescoDB
 
 @dataclass
@@ -318,6 +318,8 @@ class Swarm:
   def __init__(self, args):
     self.args = args
     self.swarm_servers = args['swarm_servers'].split(',')
+
+    self.paging_size = 1000 # swarm default = 1000
 
     # setup Swarm session
     self.swarm_session = requests.Session()
@@ -338,12 +340,12 @@ class Swarm:
       return url
   #end def make_swarm_url
 
-  def list_bucket_contents(self, filter_function, max_batch_size):
+  def list_bucket_contents_filtered(self, filter_function, max_batch_size):
     object_list = []
     batch_size = 0
     paging_marker = ''
     while True:
-      response = self.swarm_session.get(self.make_swarm_url(self.args['swarm_bucket'], f"fields=name,content-length&format=json&paging_marker={ paging_marker }"))
+      response = self.swarm_session.get(self.make_swarm_url(self.args['swarm_bucket'], f"fields=name,content-length&format=json&size={ self.paging_size }&marker={ paging_marker }"))
       response.raise_for_status()
       logging.debug(response.content)
       objects = response.json()
@@ -362,6 +364,9 @@ class Swarm:
             batch_size += swarm_object.bytes
             logging.trace(f"batch size { batch_size }")
           object_list.append(swarm_object)
+      paging_marker = objects[-1]['name']
+      logging.debug(f"next page - marker={paging_marker}")
+
   #end def list_bucket_contents
 
   def get_info(self, object_name):
@@ -443,15 +448,15 @@ class SwarmClean:
       db_args = { key: value for key, value in vars(args).items() if key[0:2] == 'db' }
       self.alfresco_db = AlfrescoDB(db_args)
     elif args.filter_method == 'regex':
-      logging.info(f"using filter type 'regex' with regex { args.filter }")
-      self.filterRegex=re.compile(args.filter)
+      logging.info(f"using filter type 'regex' with regex { args.filter_regex }")
+      self.filterRegex=re.compile(args.filter_regex)
     else:
       raise ValueError( f"Invalid filter_method: { args.filter_method }")
   #end def __init__
 
-  def filter(self, swarm_object):
+  def isDeletionCandidate(self, swarm_object):
     if args.filter_method == 'alfresco_db':
-      result = len(self.alfresco_db.do_query("select id from alf_content_url where content_url like :object_name", {'object_name': f"%/{swarm_object.name}"}).all()) == 0
+      result = self.alfresco_db.query_single_value("select count(*) from alf_content_url where content_url like :object_name", {'object_name': f"%/{swarm_object.name}"}) == 0
     elif args.filter_method == 'regex':
       result = self.filterRegex.match(swarm_object.name)
     logging.trace(f"filter { swarm_object.name }: { bool(result) } - size { humanfriendly.format_size(swarm_object.bytes, binary=True) }")
@@ -459,7 +464,7 @@ class SwarmClean:
   #end def filter
 
   def main(self):
-    objects_to_delete = self.swarm.list_bucket_contents(self.filter, self.batch_size)
+    objects_to_delete = self.swarm.list_bucket_contents_filtered(self.isDeletionCandidate, self.batch_size)
     for swarm_object in objects_to_delete['list']:
       logging.info(f"to delete: { swarm_object.name }")
     logging.info(f"total size: { humanfriendly.format_size(objects_to_delete['size'], binary=True) }")

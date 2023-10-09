@@ -20,7 +20,7 @@ Content selection:
 
 The script will delete a single batch of objects with the total size of the objects in the batch < --batch_size.
 
-When the objects have a 'deletable=no' lifepoint this will be replaced with 'deletable=yes'. This is a COPY operation and will cause the storage used for the object to be temporarily doubled.
+When the objects have a 'deletable=no' lifepoint this will be replaced with 'deletable=yes'. This is a COPY operation and will cause the storage used for the object to be temporarily doubled. The object is deleted immediately after the copy.
 
 ---
 

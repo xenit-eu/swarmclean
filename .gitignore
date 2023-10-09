@@ -7,5 +7,4 @@ build
 .settings/
 bin/
 out/
-*.iml
 **/__pycache__
