@@ -25,6 +25,12 @@ jobs:
         registry: private.docker.xenit.eu
         username: ${{ secrets.CLOUDSMITH_USER }}
         password: ${{ secrets.CLOUDSMITH_APIKEY }}
+    - name: Build docker image
+      uses: gradle/gradle-build-action@v2.3.3
+      env:
+        BRANCH_NAME: ${{ github.ref_name }}
+      with:
+        arguments: buildDockerImage
     - name: Publish docker image
       if: ${{ startsWith(github.ref, 'refs/heads/master') }}
       uses: gradle/gradle-build-action@v2.3.3
