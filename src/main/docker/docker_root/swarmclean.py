@@ -13,6 +13,7 @@ import urllib.parse
 import records
 from dataclasses import dataclass, asdict
 import humanfriendly
+import binascii
 
 sys.path.insert(0,sys.path[0]+'/castorsdk')
 import scspHeaders
@@ -351,7 +352,7 @@ class Swarm:
       objects = response.json()
 
       if not objects:
-        return object_list
+        return { 'list': object_list, 'size': batch_size }
 
       for object in objects:
         swarm_object = SwarmObject(**object)
@@ -456,7 +457,16 @@ class SwarmClean:
 
   def isDeletionCandidate(self, swarm_object):
     if args.filter_method == 'alfresco_db':
-      result = self.alfresco_db.query_single_value("select count(*) from alf_content_url where content_url like :object_name", {'object_name': f"%/{swarm_object.name}"}) == 0
+      content_url_short = swarm_object.name[-12:]
+      content_url_crc = binascii.crc32(bytes(f"swarm://{self.args.swarm_domain}/{swarm_object.name}", 'ascii'))
+      # table has an index on content_url_short + content_url_crc
+      result = self.alfresco_db.query_single_value(
+        "select count(*) from alf_content_url where content_url_short = :content_url_short and content_url_crc = :content_url_crc", 
+        {
+          'content_url_short': content_url_short,
+          'content_url_crc': content_url_crc
+        }
+      ) == 0
     elif args.filter_method == 'regex':
       result = self.filterRegex.match(swarm_object.name)
     logging.trace(f"filter { swarm_object.name }: { bool(result) } - size { humanfriendly.format_size(swarm_object.bytes, binary=True) }")
