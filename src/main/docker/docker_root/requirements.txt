@@ -2,3 +2,8 @@ configargparse
 requests[socks]
 records
 humanfriendly
+python-dateutil
+pytimeparse2
+types-python-dateutil
+types-requests
+types-humanfriendly

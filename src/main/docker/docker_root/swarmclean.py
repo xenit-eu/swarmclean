@@ -1,22 +1,23 @@
 #!/usr/bin/python3
-import configargparse
+import configargparse  # type: ignore
 import requests
 import re
 import logging
 import time
 import sys
-import socket
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import random
 import urllib.parse
-import records
-from dataclasses import dataclass, asdict
+import records  # type: ignore
 import humanfriendly
 import binascii
+from dateutil.parser import parse as parsedate
+import pytimeparse2  # type: ignore
+from attr import define, field
 
 sys.path.insert(0,sys.path[0]+'/castorsdk')
-import scspHeaders
+import scspHeaders  # type: ignore
 
 def yes_or_no(question):
     reply = str(input(question+' (y/n): ')).lower().strip()
@@ -52,18 +53,15 @@ headersToSkip=[
   r'^X-Castor-Meta-Error-Message'
 ]
 
-headersAllow = "(" + ")|(".join(headersToCopy) + ")"
-#print('allow='+headersAllow)
-headersAllow = re.compile(headersAllow, re.IGNORECASE) 
+headersAllow_string = "(" + ")|(".join(headersToCopy) + ")"
+headersAllow = re.compile(headersAllow_string, re.IGNORECASE) 
 
-headersSkip = "(" + ")|(".join(headersToSkip) + ")"
-#print('skip='+headersSkip)
-headersSkip = re.compile(headersSkip, re.IGNORECASE) 
+headersSkip_string = "(" + ")|(".join(headersToSkip) + ")"
+headersSkip = re.compile(headersSkip_string, re.IGNORECASE) 
 
 
 
 def script_init():
-  hostname = socket.gethostname()
   parser = configargparse.ArgumentParser(
     default_config_files = ['swarmclean.conf'],
     description = """
@@ -122,7 +120,7 @@ When the objects have a 'deletable=no' lifepoint this will be replaced with 'del
     '-R',
     '--report_folder',
     env_var = 'SCL_REPORT_FOLDER',
-    default = f"/tmp/swarmclean",
+    default = "/tmp/swarmclean",
     help = 'folder where report files will be written'
   )
 
@@ -186,6 +184,16 @@ When the objects have a 'deletable=no' lifepoint this will be replaced with 'del
     required = True,
     help = 'alfresco_db | regex'
   )
+
+  parser.add_argument(
+    '-a',
+    '--min_age',
+    env_var = 'SCL_MIN_AGE',
+    default = '1 week',
+    help = 'minimum age for objects, objects that are older will be deleted (string duration parsed with pytimeparse2)'
+  )
+
+  # regex
   parser.add_argument(
     '-f',
     '--filter_regex',
@@ -228,7 +236,7 @@ When the objects have a 'deletable=no' lifepoint this will be replaced with 'del
   addLoggingLevel('TRACE', logging.DEBUG + 5) # level between info and debug
   numeric_level = getattr(logging, args.loglevel.upper(), None)
   if not isinstance(numeric_level, int):
-    raise ValueError( f"Invalid log level: { loglevel }")
+    raise ValueError( f"Invalid log level: { args.loglevel }")
   logging.basicConfig(level=numeric_level,format='%(asctime)s %(name)-5s %(levelname)-8s - %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
 
   return args
@@ -308,10 +316,15 @@ class AlfrescoDB:
     return self.do_query(query, arg_values)[0][0]
 #end class AlfrescoDB
 
-@dataclass
+
+def parse_http_timestamp(timestamp: str) -> datetime:
+    return parsedate(timestamp).astimezone()
+
+@define
 class SwarmObject:
   name: str
   bytes: int
+  last_modified: datetime = field(converter=parse_http_timestamp)
 
 
 class Swarm:
@@ -327,7 +340,7 @@ class Swarm:
 
     # if using swarm gateway, set up basic AUTH
     if args['swarm_use_contentgateway']:
-      logging.debug(f"Using Swarm gateway, setting up basic auth.")
+      logging.debug("Using Swarm gateway, setting up basic auth.")
       self.swarm_session.auth = (args['swarm_user'], args['swarm_password'])
 
     if args['swarm_proxy']:
@@ -346,7 +359,8 @@ class Swarm:
     batch_size = 0
     paging_marker = ''
     while True:
-      response = self.swarm_session.get(self.make_swarm_url(self.args['swarm_bucket'], f"fields=name,content-length&format=json&size={ self.paging_size }&marker={ paging_marker }"))
+      # field tmBorn is named last_modified in the json result
+      response = self.swarm_session.get(self.make_swarm_url(self.args['swarm_bucket'], f"fields=name,content-length,tmBorn&format=json&size={ self.paging_size }&marker={ paging_marker }"))
       response.raise_for_status()
       logging.debug(response.content)
       objects = response.json()
@@ -356,6 +370,7 @@ class Swarm:
 
       for object in objects:
         swarm_object = SwarmObject(**object)
+
         if filter_function(swarm_object):
           if batch_size + swarm_object.bytes > max_batch_size:
             if batch_size == 0:
@@ -381,7 +396,7 @@ class Swarm:
     if 'Lifepoint' in object_info:
       lifepoints=scspHeaders.lifepointsFromString(object_info['Lifepoint'])
       for lp in lifepoints:
-        if lp.end == None or time.time() <= lp.end.sinceEpoch():
+        if lp.end is None or time.time() <= lp.end.sinceEpoch():
           if lp.constraint == 'deletable=no':
             logging.debug(f"{ object_info['Castor-System-Name'] } has 'deletable=no' lifepoint")
             return False
@@ -424,8 +439,11 @@ class Swarm:
 
 class SwarmClean:
   def __init__(self, args):
-    self.args = args
     logging.debug(f"args={ args }")
+    self.args = args
+
+    self.max_creation_date = datetime.now(timezone.utc) - pytimeparse2.parse(args.min_age, as_timedelta=True)
+    logging.info(f"max_creation_date={self.max_creation_date}")
 
     if self.args.execute:
       self.args.dryrun = False
@@ -456,7 +474,10 @@ class SwarmClean:
   #end def __init__
 
   def isDeletionCandidate(self, swarm_object):
-    if args.filter_method == 'alfresco_db':
+    logging.debug(f"modified={swarm_object.last_modified}")
+    if swarm_object.last_modified > self.max_creation_date:
+      result=False
+    elif args.filter_method == 'alfresco_db':
       content_url_short = swarm_object.name[-12:]
       content_url_crc = binascii.crc32(bytes(f"swarm://{self.args.swarm_domain}/{swarm_object.name}", 'ascii'))
       # table has an index on content_url_short + content_url_crc
@@ -469,7 +490,7 @@ class SwarmClean:
       ) == 0
     elif args.filter_method == 'regex':
       result = self.filterRegex.match(swarm_object.name)
-    logging.trace(f"filter { swarm_object.name }: { bool(result) } - size { humanfriendly.format_size(swarm_object.bytes, binary=True) }")
+    logging.trace(f"filter { swarm_object.name }: { bool(result) } - last_modified={swarm_object.last_modified} - size={ humanfriendly.format_size(swarm_object.bytes, binary=True) }")
     return result
   #end def filter
 
