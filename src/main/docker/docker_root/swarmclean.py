@@ -14,7 +14,7 @@ import humanfriendly
 import binascii
 from dateutil.parser import parse as parsedate
 import pytimeparse2  # type: ignore
-from attr import define, field
+from attr import define, field  # type: ignore
 
 sys.path.insert(0, sys.path[0] + "/castorsdk")
 import scspHeaders  # type: ignore
