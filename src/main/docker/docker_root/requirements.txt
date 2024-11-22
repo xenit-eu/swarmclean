@@ -1,6 +1,6 @@
 configargparse
 requests[socks]
-records
+records==0.5.3
 attrs
 humanfriendly
 python-dateutil
@@ -8,3 +8,4 @@ pytimeparse2
 types-python-dateutil
 types-requests
 types-humanfriendly
+SQLAlchemy==1.4.49
