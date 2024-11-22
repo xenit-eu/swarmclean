@@ -5,8 +5,8 @@ plugins {
 
 ext {
     base_img = 'open-source.docker.xenit.eu/oracle-python'
-    base_img_version = 'main-2.1.2'
-    img_version = '2.2.0'
+    base_img_version = 'main-2.1.1'
+    img_version = '2.2.1'
 }
 
 createDockerFile {
